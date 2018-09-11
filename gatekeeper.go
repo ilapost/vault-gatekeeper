@@ -451,7 +451,7 @@ func (g *Gatekeeper) RequestToken(providerKey string, taskId string, requestedRo
 	}
 	if provider, ok := g.Schedulers[providerKey]; ok {
 		if task, err := provider.LookupTask(taskId); err == nil {
-			if time.Since(task.StartTime()) >= g.config.MaxTaskLife {
+			if !task.StartingState() && time.Since(task.StartTime()) >= g.config.MaxTaskLife {
 				g.metrics.Denied()
 				return "", 0, ErrTaskNotFresh
 			}
@@ -592,7 +592,7 @@ func (g *Gatekeeper) RenewalWorker(controlChan chan struct{}) {
 			if err := g.RenewToken(); err == nil {
 				log.Infof("Renewed Vault Token (original ttl: %v)", ttl)
 			} else {
-				log.Warn("Failed to renew Vault token. Is the policy set correctly? Gatekeeper will now be sealed: %v", err)
+				log.Warnf("Failed to renew Vault token. Is the policy set correctly? Gatekeeper will now be sealed: %v", err)
 				g.Seal()
 				return
 			}

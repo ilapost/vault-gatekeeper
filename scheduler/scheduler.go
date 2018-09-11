@@ -15,6 +15,7 @@ type Task interface {
 	Image() string
 	IP() net.IP
 	StartTime() time.Time
+	StartingState() bool
 }
 
 type Scheduler interface {

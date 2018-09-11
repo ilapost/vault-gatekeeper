@@ -95,6 +95,7 @@ type task struct {
 	image     string
 	ip        net.IP
 	startTime time.Time
+	state     string
 }
 
 func (t task) Id() string {
@@ -121,6 +122,10 @@ func (t task) StartTime() time.Time {
 	return t.startTime
 }
 
+func (t task) StartingState() bool {
+	return t.state == "TASK_STAGING" || t.state == "TASK_STARTING"
+}
+
 func NewMesosScheduler(master string) (scheduler.Scheduler, error) {
 	m := &mesosScheduler{master}
 	if _, _, err := m.getMesosMaster(); err != nil {
@@ -136,6 +141,7 @@ func (m *mesosScheduler) LookupTask(taskId string) (scheduler.Task, error) {
 		mesosTask, framework, slaveHost, err = m.getMesosTask(taskId)
 	}
 	runningTime := time.Unix(0, 0)
+	state := mesosTask.State
 	if len(mesosTask.Statuses) > 0 {
 		// https://github.com/apache/mesos/blob/a61074586d778d432ba991701c9c4de9459db897/src/webui/master/static/js/controllers.js#L148
 		runningTime = time.Unix(0, int64(mesosTask.Statuses[0].Timestamp*1000000000))
@@ -155,6 +161,7 @@ func (m *mesosScheduler) LookupTask(taskId string) (scheduler.Task, error) {
 		group:     framework,
 		startTime: runningTime,
 		ip:        ip,
+		state:     state,
 	}, err
 }
 

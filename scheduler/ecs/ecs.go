@@ -57,6 +57,10 @@ func (t task) StartTime() time.Time {
 	return t.startTime
 }
 
+func (t task) StartingState() bool {
+	return false
+}
+
 func NewECSScheduler() (scheduler.Scheduler, error) {
 	e := &ecsScheduler{
 		Session: session.New(),
