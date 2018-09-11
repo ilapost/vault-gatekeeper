@@ -349,6 +349,14 @@ func TestRequestToken(t *testing.T) {
 		if _, _, err := g.RequestToken("mock", "expired", "", ""); err != ErrTaskNotFresh {
 			t.Fatalf("Expired task should have returned task not fresh: %v", err)
 		}
+
+		if _, _, err := g.RequestToken("mock", "starting", "", ""); err != nil {
+			t.Fatalf("Token request should have succeeded for starting task: %v", err)
+		}
+
+		if _, _, err := g.RequestToken("mock", "staging", "", ""); err != nil {
+			t.Fatalf("Token request should have succeeded for staging task: %v", err)
+		}
 	} else if err == nil {
 		t.Fatalf("Failed to create gatekeeper instance: could not unseal.")
 	} else {
