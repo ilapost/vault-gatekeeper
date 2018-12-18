@@ -151,6 +151,10 @@ func (t task) StartTime() time.Time {
 	return t.startTime
 }
 
+func (t task) StartingState() bool {
+	return false
+}
+
 //NewMesosScheduler creates the object for talking to mesos.  In this case it
 // will create the object to talk to DCOS EE Mesos which needs some authentication
 // pieces setup
