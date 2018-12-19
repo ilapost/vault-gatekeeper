@@ -39,9 +39,11 @@ type mesosMaster struct {
 	Version  string `json:"version"`
 }
 
-type mesosSlave struct {
-	ID  string `json:"id"`
-	PID string `json:"pid"`
+type mesosSlaves struct {
+	Slaves []struct {
+		ID  string `json:"id"`
+		PID string `json:"pid"`
+	} `json:"slaves"`
 }
 
 type mesosFrameworks struct {
@@ -55,6 +57,10 @@ type mesosFrameworks struct {
 			} `json:"framework_info"`
 		} `json:"frameworks"`
 	} `json:"get_frameworks"`
+}
+
+type mesosTasks struct {
+	Tasks []mesosTask `json:"tasks"`
 }
 
 type mesosTask struct {
@@ -135,7 +141,9 @@ func NewMesosScheduler(master string) (scheduler.Scheduler, error) {
 	if _, _, err := m.getMesosMaster(); err != nil {
 		return nil, err
 	}
-	m.updateFrameworks()
+	if err := m.updateFrameworks(); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -228,7 +236,7 @@ func (m *mesosScheduler) getMesosMaster() ([]string, string, error) {
 }
 
 func (m *mesosScheduler) getMesosTask(taskID string) (mesosTask, string, string, error) {
-	var tasks []mesosTask
+	var tasks mesosTasks
 	var err error
 	if masterHosts, protocol, err := m.getMesosMaster(); err == nil {
 		var masterErr error
@@ -248,11 +256,11 @@ func (m *mesosScheduler) getMesosTask(taskID string) (mesosTask, string, string,
 		if masterErr != nil {
 			return mesosTask{}, "", "", masterErr
 		}
-		if len(tasks) == 0 {
+		if len(tasks.Tasks) == 0 {
 			return mesosTask{}, "", "", scheduler.ErrTaskNotFound
 		}
 
-		for _, task := range tasks {
+		for _, task := range tasks.Tasks {
 			if task.Id == taskID {
 				if slaveHost, err := m.getSlaveHost(task.SlaveId); err == nil {
 					if frameworkName, ok := m.frameworks[task.FrameworkID]; ok {
@@ -278,17 +286,17 @@ func (m *mesosScheduler) getMesosTask(taskID string) (mesosTask, string, string,
 func (m *mesosScheduler) getSlaveHost(SlaveID string) (string, error) {
 	var err error
 	if masterHosts, protocol, err := m.getMesosMaster(); err == nil {
-		var slaves []mesosSlave
+		var slaves mesosSlaves
 		var masterErr error
 		for _, host := range masterHosts {
 			if resp, err := http.Get(protocol + "://" + host + "/slaves?slave_id=" + SlaveID); err == nil {
 				defer resp.Body.Close()
 				if err := json.NewDecoder(resp.Body).Decode(&slaves); err == nil {
-					if len(slaves) > 0 {
-						if pid, err := upid.Parse(slaves[0].PID); err == nil {
+					if len(slaves.Slaves) > 0 {
+						if pid, err := upid.Parse(slaves.Slaves[0].PID); err == nil {
 							return pid.Host, nil
 						}
-						logrus.Warnf("Mesos: Failed to parse PID %v.", slaves[0].PID)
+						logrus.Warnf("Mesos: Failed to parse PID %v.", slaves.Slaves[0].PID)
 					} else {
 						logrus.Warnf("Mesos: Task was running on Slave %v, but no information about that slave was found.", SlaveID)
 					}
