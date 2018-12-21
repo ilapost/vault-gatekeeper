@@ -238,15 +238,17 @@ func (m *mesosScheduler) getMesosMaster() ([]string, string, error) {
 func (m *mesosScheduler) getMesosTask(taskID string) (mesosTask, string, string, error) {
 	var tasks mesosTasks
 	var err error
-	if err := m.sendMesosRequest("/tasks?task_id="+taskID, "", "GET", &tasks); err == nil {
+	if err = m.sendMesosRequest("/tasks?task_id="+taskID, "", "GET", &tasks); err == nil {
 		if len(tasks.Tasks) != 1 {
 			return mesosTask{}, "", "", scheduler.ErrTaskNotFound
 		}
 		task := tasks.Tasks[0]
-		if slaveHost, err := m.getSlaveHost(task.SlaveId); err == nil {
+		var slaveHost string
+		if slaveHost, err = m.getSlaveHost(task.SlaveId); err == nil {
 			if frameworkName, ok := m.frameworks[task.FrameworkID]; ok {
 				return task, frameworkName, slaveHost, nil
-			} else if err := m.updateFrameworks(); err == nil {
+			} else if err = m.updateFrameworks(); err == nil {
+				logrus.Infof("Mesos: Could not find framework %v. Refreshing cache.", task.FrameworkID)
 				if frameworkName, ok := m.frameworks[task.FrameworkID]; ok {
 					return task, frameworkName, slaveHost, nil
 				}
@@ -260,9 +262,10 @@ func (m *mesosScheduler) getMesosTask(taskID string) (mesosTask, string, string,
 func (m *mesosScheduler) getSlaveHost(SlaveID string) (string, error) {
 	var slaves mesosSlaves
 	var err error
-	if err := m.sendMesosRequest("/slaves?slave_id="+SlaveID, "", "GET", &slaves); err == nil {
+	if err = m.sendMesosRequest("/slaves?slave_id="+SlaveID, "", "GET", &slaves); err == nil {
 		if len(slaves.Slaves) == 1 {
-			if pid, err := upid.Parse(slaves.Slaves[0].PID); err == nil {
+			var pid *upid.UPID
+			if pid, err = upid.Parse(slaves.Slaves[0].PID); err == nil {
 				return pid.Host, nil
 			}
 			logrus.Warnf("Mesos: Failed to parse PID %v.", slaves.Slaves[0].PID)
@@ -276,7 +279,7 @@ func (m *mesosScheduler) getSlaveHost(SlaveID string) (string, error) {
 func (m *mesosScheduler) updateFrameworks() error {
 	var frameworks mesosFrameworks
 	var err error
-	if err := m.sendMesosRequest("/master/api/v1", `{"type":"GET_FRAMEWORKS"}`, "POST", &frameworks); err == nil {
+	if err = m.sendMesosRequest("/master/api/v1", `{"type":"GET_FRAMEWORKS"}`, "POST", &frameworks); err == nil {
 		for _, framework := range frameworks.AllFrameworks.ActiveFrameworks {
 			m.frameworks[framework.Info.ID.Value] = framework.Info.Name
 		}
@@ -285,16 +288,20 @@ func (m *mesosScheduler) updateFrameworks() error {
 }
 
 func (m *mesosScheduler) sendMesosRequest(endpoint string, requestBody string, requestType string, response interface{}) error {
+	var masterHosts []string
+	var protocol string
 	var err error
-	if masterHosts, protocol, err := m.getMesosMaster(); err == nil {
+	if masterHosts, protocol, err = m.getMesosMaster(); err == nil {
 		for _, host := range masterHosts {
 			var jsonStr = []byte(requestBody)
-			if req, err := http.NewRequest(requestType, protocol+"://"+host+endpoint, bytes.NewBuffer(jsonStr)); err == nil {
+			var req *http.Request
+			if req, err = http.NewRequest(requestType, protocol+"://"+host+endpoint, bytes.NewBuffer(jsonStr)); err == nil {
 				req.Header.Set("Content-Type", "application/json")
 				client := &http.Client{}
-				if resp, err := client.Do(req); err == nil {
+				var resp *http.Response
+				if resp, err = client.Do(req); err == nil {
 					defer resp.Body.Close()
-					if err := json.NewDecoder(resp.Body).Decode(&response); err == nil {
+					if err = json.NewDecoder(resp.Body).Decode(&response); err == nil {
 						return nil
 					}
 				}
