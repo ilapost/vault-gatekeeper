@@ -153,10 +153,11 @@ func (u UserPassUnsealer) Name() string {
 
 // The AppRole unsealer retrives a token using RoleId and SecretId.
 type AppRoleUnsealer struct {
-	RoleId   string
-	SecretId string
-	Endpoint string
-	Wrap     time.Duration
+	RoleId    string
+	SecretId  string
+	Endpoint  string
+	Wrap      time.Duration
+	Namespace string
 	genericUnsealer
 }
 
@@ -174,7 +175,7 @@ func (u AppRoleUnsealer) Token() (string, error) {
 		}{u.RoleId, u.SecretId},
 		MaxRedirects:    10,
 		RedirectHeaders: true,
-	}
+	}.WithHeader("X-Vault-Namespace", u.Namespace)
 	if u.Wrap > 0 {
 		req.AddHeader("X-Vault-Wrap-TTL", u.Wrap.String())
 	}

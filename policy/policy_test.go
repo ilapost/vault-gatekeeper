@@ -40,6 +40,11 @@ const samplePolicy = `{
 	"mesos:framework:service/*": {
 	    "roles":["mesos_framework_service"],
 	    "num_uses":1
+	},
+	"mesos:framework:namespace": {
+	    "roles":["mesos_framework_namespace"],
+		"num_uses":1,
+		"namespace":"test"
 	}
 }`
 
@@ -97,6 +102,21 @@ func TestSamplePolicy(t *testing.T) {
 			}
 		} else {
 			t.Fatalf("Test of '%s' failed. Expected: %v Had: %v", "foo", "mesos:framework:task", policy.Roles)
+		}
+
+		if policy, ok := pols.Get("mesos:framework:namespace"); ok {
+			if policy.Roles[0] != "mesos_framework_namespace" {
+				t.Fatalf("Expected most specific role of '%s'. Had: %v", "mesos:framework:namespace", policy.Roles[0])
+			}
+			if policy.NumUses != 1 {
+				t.Fatalf("Expected number of uses to be 1. Had: %v", policy.NumUses)
+			}
+			if policy.Namespace != "test" {
+
+				t.Fatalf("Expected namespace to be 'test'. Had: %v", policy.Namespace)
+			}
+		} else {
+			t.Fatalf("Test of '%s' failed. Could not find policy.", "mesos:framework:namespace")
 		}
 	} else {
 		t.Fatalf("Failed to parse policy from json: %v", err)

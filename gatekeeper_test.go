@@ -61,6 +61,7 @@ func TestLoadPolicyV2(t *testing.T) {
 			}{"kv", map[string]string{"version": "2"}},
 			MaxRedirects:    10,
 			RedirectHeaders: true,
+			Insecure:        true,
 		}.WithHeader("X-Vault-Token", vaultToken),
 	}.Do()
 	if err != nil || (r.StatusCode != 200 && r.StatusCode != 204) {
@@ -128,6 +129,7 @@ func TestLoadPolicyV1(t *testing.T) {
 			}{"kv", map[string]string{"version": "1"}},
 			MaxRedirects:    10,
 			RedirectHeaders: true,
+			Insecure:        true,
 		}.WithHeader("X-Vault-Token", vaultToken),
 	}.Do()
 	if err != nil || (r.StatusCode != 200 && r.StatusCode != 204) {
@@ -194,6 +196,7 @@ func installPolicy(path string, policy string) error {
 			}{json.RawMessage(policy)},
 			ContentType: "application/json",
 			Method:      "POST",
+			Insecure:    true,
 		}.WithHeader("X-Vault-Token", vaultToken),
 	}.Do()
 	if err == nil {
@@ -215,7 +218,7 @@ func installPolicy(path string, policy string) error {
 	}
 }
 
-func createAuthEndpoint(authType string) (string, error) {
+func createAuthEndpoint(authType string, namespace string) (string, error) {
 	authPath := ksuid.New().String()
 	r, err := vault.Request{
 		goreq.Request{
@@ -226,7 +229,8 @@ func createAuthEndpoint(authType string) (string, error) {
 			}{authType},
 			MaxRedirects:    10,
 			RedirectHeaders: true,
-		}.WithHeader("X-Vault-Token", vaultToken),
+			Insecure:        true,
+		}.WithHeader("X-Vault-Token", vaultToken).WithHeader("X-Vault-Namespace", namespace),
 	}.Do()
 	if err == nil {
 		defer r.Body.Close()
@@ -261,7 +265,7 @@ func TestRequestToken(t *testing.T) {
 	mock.ValidTaskId = ksuid.New().String()
 
 	var authPath string
-	if ap, err := createAuthEndpoint("approle"); err == nil {
+	if ap, err := createAuthEndpoint("approle", ""); err == nil {
 		authPath = ap
 	} else {
 		t.Fatalf("Failed to initialize approle endpoint: %v", err)
@@ -278,6 +282,7 @@ func TestRequestToken(t *testing.T) {
 			}{"unseal"},
 			ContentType: "application/json",
 			Method:      "POST",
+			Insecure:    true,
 		}.WithHeader("X-Vault-Token", vaultToken)}.Do()
 
 		if err != nil || (r.StatusCode != 200 && r.StatusCode != 204) {
@@ -363,4 +368,166 @@ func TestRequestToken(t *testing.T) {
 		t.Fatalf("Failed to create gatekeeper instance: %v", err)
 	}
 
+}
+
+const mockNamespacePolicy = `{
+	"mock:namespace":{
+		"roles":["namespace_role"],
+		"num_uses":1,
+		"namespace":"test_namespace"
+	}
+}`
+
+func namespaceExists(namespace string) (bool, error) {
+	r, err := vault.Request{
+		goreq.Request{
+			Uri:      vault.Path("/v1/sys/namespaces/" + namespace),
+			Insecure: true,
+		}.WithHeader("X-Vault-Token", vaultToken),
+	}.Do()
+	if err == nil {
+		defer r.Body.Close()
+		if r.StatusCode == 200 || r.StatusCode == 204 {
+			return true, nil
+		}
+		var e vault.Error
+		e.Code = r.StatusCode
+		if err := r.Body.FromJsonTo(&e); err == nil {
+			return false, e
+		}
+		return false, err
+	}
+	return false, err
+}
+
+func createNamespace(namespace string) error {
+	r, err := vault.Request{
+		goreq.Request{
+			Uri:      vault.Path("/v1/sys/namespaces/" + namespace),
+			Method:   "POST",
+			Insecure: true,
+		}.WithHeader("X-Vault-Token", vaultToken),
+	}.Do()
+	if err == nil {
+		defer r.Body.Close()
+		if r.StatusCode == 200 || r.StatusCode == 204 {
+			return nil
+		}
+		var e vault.Error
+		e.Code = r.StatusCode
+		if err := r.Body.FromJsonTo(&e); err == nil {
+			return e
+		}
+		return err
+	}
+	return err
+}
+
+func deleteNamespace(namespace string) error {
+	r, err := vault.Request{
+		goreq.Request{
+			Uri:      vault.Path("/v1/sys/namespaces/" + namespace),
+			Method:   "DELETE",
+			Insecure: true,
+		}.WithHeader("X-Vault-Token", vaultToken),
+	}.Do()
+	if err == nil {
+		defer r.Body.Close()
+		if r.StatusCode == 200 || r.StatusCode == 204 {
+			return nil
+		}
+		var e vault.Error
+		e.Code = r.StatusCode
+		if err := r.Body.FromJsonTo(&e); err == nil {
+			return e
+		}
+		return err
+	}
+	return err
+}
+
+func TestNamespace(t *testing.T) {
+	// defer teardownNamespaceTestCase(t)
+	mock.ValidTaskId = "namespace"
+
+	if exists, err := namespaceExists("test_namespace"); !exists {
+		if err := createNamespace("test_namespace"); err != nil {
+			t.Fatalf("Failed to create namespace: %v", err)
+		}
+	} else if err != nil {
+		t.Fatalf("Failed to communicate with vault: %v", err)
+	}
+
+	var authPath string
+	if ap, err := createAuthEndpoint("approle", "test_namespace"); err == nil {
+		authPath = ap
+	} else {
+		t.Fatalf("Failed to initialize approle endpoint: %v", err)
+	}
+
+	policyPath := "v1/secret/data/" + ksuid.New().String()
+	namespaces := [3]string{"test_namespace"}
+	for i, appRoleName := range []string{"namespace_role"} {
+		r, err := vault.Request{goreq.Request{
+			Uri:             vault.Path("/v1/auth/" + authPath + "/role/" + appRoleName),
+			MaxRedirects:    10,
+			RedirectHeaders: true,
+			Body: struct {
+				Policies string `json:"policies"`
+			}{"unseal"},
+			ContentType: "application/json",
+			Method:      "POST",
+			Insecure:    true,
+		}.WithHeader("X-Vault-Token", vaultToken).WithHeader("X-Vault-Namespace", namespaces[i])}.Do()
+
+		if err != nil || (r.StatusCode != 200 && r.StatusCode != 204) {
+			t.Fatalf("failed to create app role for testing")
+		}
+	}
+
+	if err := installPolicy(policyPath, mockNamespacePolicy); err != nil {
+		if verr, ok := err.(vault.Error); ok {
+			t.Fatalf("Could not upload policy to vault: %v", verr)
+		} else {
+			t.Fatalf("Failed to upload policy to vault: %v", err)
+		}
+	}
+
+	conf := Config{
+		Schedulers: []string{"mock"},
+		Store:      "memory",
+
+		PolicyPath:  policyPath,
+		MaxTaskLife: 1 * time.Minute,
+
+		Unsealer: unsealer.TokenUnsealer{vaultToken},
+	}
+
+	conf.Vault.Address = vaultAddr
+	conf.Vault.KvVersion = "2"
+	conf.Vault.AppRoleMount = authPath
+
+	if g, err := NewGatekeeper(conf); err == nil && g.IsUnsealed() {
+		if token, _, err := g.RequestToken("mock", mock.ValidTaskId, "", ""); err == nil {
+			if _, err := (unsealer.WrappedTokenUnsealer{token}).Token(); err != nil {
+				t.Fatalf("Wrapped token requested from gatekeeper could not be unwrapped: %v", err)
+			}
+		} else {
+			t.Fatalf("Failed to request token: %v", err)
+		}
+
+		if _, _, err := g.RequestToken("mock", mock.ValidTaskId, "", ""); err != ErrMaxTokensGiven {
+			t.Fatalf("Token request should have failed with ErrMaxTokensGiven: %v", err)
+		}
+	} else if err == nil {
+		t.Fatalf("Failed to create gatekeeper instance: could not unseal.")
+	} else {
+		t.Fatalf("Failed to create gatekeeper instance: %v", err)
+	}
+}
+
+func teardownNamespaceTestCase(t *testing.T) {
+	if err := deleteNamespace("test_namespace"); err != nil {
+		t.Logf("Failed to clean up namespace: test_namespace")
+	}
 }

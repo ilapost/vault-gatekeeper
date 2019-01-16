@@ -68,6 +68,13 @@ func (m *mockScheduler) LookupTask(taskId string) (scheduler.Task, error) {
 				ip:        net.IPv4(127, 0, 0, 1),
 			}, nil
 		}
+		if taskId == "namespace" {
+			return &task{
+				id:        taskId,
+				name:      "namespace",
+				startTime: time.Now(),
+			}, nil
+		}
 		return &task{
 			id:        taskId,
 			name:      "mock-task",

@@ -14,7 +14,9 @@ import (
 type Policy struct {
 	Roles         []string `json:"roles"`
 	NumUses       int      `json:"num_uses"`
+	Namespace     string   `json:"namespace"`
 	strictestPath []byte
+	RoleNS        map[string]string
 	wildcard      bool
 }
 
@@ -22,16 +24,24 @@ func (p *Policy) merge(path []byte, other Policy) {
 	if len(p.Roles) == 0 && p.NumUses == 0 {
 		*p = other
 		p.Roles = append([]string{}, other.Roles...)
+		p.RoleNS = make(map[string]string)
+		for _, role := range p.Roles {
+			p.RoleNS[role] = p.Namespace
+		}
 		p.strictestPath = path
 	} else {
 		if len(path) > len(p.strictestPath) {
 			p.NumUses = other.NumUses
 			p.strictestPath = path
+			p.Namespace = other.Namespace
 		}
 		// prepend other.Roles into p.Roles
 		p.Roles = append(p.Roles, other.Roles...)
 		copy(p.Roles[len(other.Roles):], p.Roles)
 		copy(p.Roles, other.Roles)
+		for _, role := range other.Roles {
+			p.RoleNS[role] = other.Namespace
+		}
 	}
 }
 
@@ -92,7 +102,6 @@ func (p *Policies) Get(path string) (*Policy, bool) {
 			ret.merge(k, v)
 			foundPolicy = true
 		}
-
 		return false
 	}
 

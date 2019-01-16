@@ -358,12 +358,12 @@ func (g *Gatekeeper) Serve() error {
 	return http.ListenAndServe(g.config.ListenAddress, r)
 }
 
-func (g *Gatekeeper) GetRoleId(roleName string, authToken string) (string, error) {
+func (g *Gatekeeper) GetRoleId(roleName string, namespace string, authToken string) (string, error) {
 	r, err := vault.Request{goreq.Request{
 		Uri:             vault.Path(path.Join("v1/auth", g.config.Vault.AppRoleMount, "role", roleName, "role-id")),
 		MaxRedirects:    10,
 		RedirectHeaders: true,
-	}.WithHeader("X-Vault-Token", authToken)}.Do()
+	}.WithHeader("X-Vault-Token", authToken).WithHeader("X-Vault-Namespace", namespace)}.Do()
 	if err == nil {
 		defer r.Body.Close()
 		switch r.StatusCode {
@@ -395,13 +395,13 @@ func (g *Gatekeeper) GetRoleId(roleName string, authToken string) (string, error
 	}
 }
 
-func (g *Gatekeeper) GetSecretId(roleName string, authToken string) (string, error) {
+func (g *Gatekeeper) GetSecretId(roleName string, namespace string, authToken string) (string, error) {
 	r, err := vault.Request{goreq.Request{
 		Uri:             vault.Path(path.Join("v1/auth", g.config.Vault.AppRoleMount, "role", roleName, "secret-id")),
 		MaxRedirects:    10,
 		RedirectHeaders: true,
 		Method:          "POST",
-	}.WithHeader("X-Vault-Token", authToken)}.Do()
+	}.WithHeader("X-Vault-Token", authToken).WithHeader("X-Vault-Namespace", namespace)}.Do()
 	if err == nil {
 		defer r.Body.Close()
 		switch r.StatusCode {
@@ -505,14 +505,15 @@ func (g *Gatekeeper) RequestToken(providerKey string, taskId string, requestedRo
 					g.RLock()
 					authToken := g.Token
 					g.RUnlock()
-
-					if roleId, err := g.GetRoleId(roleName, authToken); err == nil {
-						if secretId, err := g.GetSecretId(roleName, authToken); err == nil {
+					namespace := policy.RoleNS[roleName]
+					if roleId, err := g.GetRoleId(roleName, namespace, authToken); err == nil {
+						if secretId, err := g.GetSecretId(roleName, namespace, authToken); err == nil {
 							uns := unsealer.AppRoleUnsealer{
-								RoleId:   roleId,
-								SecretId: secretId,
-								Endpoint: g.config.Vault.AppRoleMount,
-								Wrap:     100 * time.Minute,
+								RoleId:    roleId,
+								SecretId:  secretId,
+								Endpoint:  g.config.Vault.AppRoleMount,
+								Wrap:      100 * time.Minute,
+								Namespace: namespace,
 							}
 							if token, err := uns.Token(); err == nil {
 								g.metrics.Success()
